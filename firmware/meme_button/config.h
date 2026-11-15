@@ -12,7 +12,7 @@ constexpr uint8_t PIN_LCD_D6 = 11;
 constexpr uint8_t PIN_LCD_D7 = 12;
 
 constexpr uint32_t BAUD = 115200;
-constexpr const char* FW_VERSION = "0.4";
+constexpr const char* FW_VERSION = "0.5";
 constexpr uint8_t SERIAL_LINE_MAX = 32;  // longer incoming lines are dropped
 
 constexpr uint16_t DEBOUNCE_MS  = 30;

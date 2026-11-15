@@ -131,6 +131,10 @@ main {
 .stage[data-state="idle"] .leg.left  { transform: rotate(6deg); }
 .stage[data-state="idle"] .leg.right { transform: rotate(-6deg); }
 
+.lyrics { width: 100%; min-height: 3.6em; text-align: center; }
+.lyric-prev { min-height: 1.4em; font-size: 0.9rem; opacity: 0.45; }
+.lyric-line { min-height: 1.6em; font-size: 1.35rem; font-weight: 700; }
+
 .progress { width: 100%; height: 6px; border-radius: 3px; background: rgb(255 255 255 / 0.12); }
 .progress-bar { width: 0; height: 100%; border-radius: 3px; background: currentColor; transition: width 120ms linear; }
 .up-next { min-height: 1.4em; font-size: 0.875rem; opacity: 0.8; }

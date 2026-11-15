@@ -4,3 +4,7 @@ build/
 *.elf
 .vscode/
 COMMIT_MSG.txt
+
+# Song data (see tools/import_projecthub.py): stays local
+songs/
+firmware/meme_button/song_*.h

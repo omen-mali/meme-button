@@ -11,6 +11,8 @@ const ui = {
   dancer: $("dancer"),
   progress: $("progressBar"),
   upNext: $("upNext"),
+  lyricPrev: $("lyricPrev"),
+  lyricLine: $("lyricLine"),
   count: $("count"),
   press: $("pressBtn"),
   stop: $("stopBtn"),
@@ -88,6 +90,23 @@ function startVisual(id, noteCount) {
   ui.title.textContent = meme.title;
   ui.progress.style.width = "0%";
   ui.upNext.textContent = "";
+  clearLyrics();
+}
+
+function clearLyrics() {
+  ui.lyricPrev.textContent = "";
+  ui.lyricLine.textContent = "";
+}
+
+// mode: new = start a line, add = append after a space, cont = append (split word)
+function showLyric(mode, text) {
+  if (mode === "new") {
+    ui.lyricPrev.textContent = ui.lyricLine.textContent;
+    ui.lyricLine.textContent = text;
+  } else {
+    const line = ui.lyricLine.textContent;
+    ui.lyricLine.textContent = line + (mode === "add" && line ? " " : "") + text;
+  }
 }
 
 function stepVisual(index) {
@@ -103,6 +122,7 @@ function endVisual() {
   ui.title.textContent = IDLE_TITLE;
   ui.dancer.classList.remove("pose-b");
   ui.progress.style.width = "0%";
+  clearLyrics();
 }
 
 function flashPress() {
@@ -142,7 +162,7 @@ function checkRegistry(firmwareIds) {
   ui.warning.hidden = false;
 }
 
-// ---- Firmware to web (PLAN.md 3) ----
+// ---- Firmware to web ----
 
 const handlers = {
   READY([version]) {
@@ -161,6 +181,9 @@ const handlers = {
   NOTE([, i, freq, ms]) {
     stepVisual(Number(i));
     playTone(Number(freq), Number(ms));
+  },
+  LYRIC([, mode, ...words]) {
+    showLyric(mode, words.join(" "));
   },
   END: endVisual,
   NEXT([id]) {

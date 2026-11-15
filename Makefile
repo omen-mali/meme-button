@@ -5,7 +5,7 @@ SKETCH := firmware/meme_button
 LIBS   := $(HOME)/Library/Arduino15/libraries
 PORT   ?= $(firstword $(wildcard /dev/cu.usbmodem* /dev/cu.usbserial*))
 
-.PHONY: compile upload monitor web
+.PHONY: compile upload monitor web song
 
 compile:
 	"$(CLI)" compile --fqbn $(FQBN) --warnings default --libraries "$(LIBS)" $(SKETCH)
@@ -15,6 +15,11 @@ upload: compile
 
 monitor:
 	"$(CLI)" monitor -p $(PORT) -c baudrate=115200
+
+# Import song data (git-ignored) from your saved copy of the Project Hub sketch
+SONG_SRC ?= songs/rickroll_projecthub.ino
+song:
+	python3 -I tools/import_projecthub.py "$(SONG_SRC)"
 
 web:
 	python3 -m http.server 8000 -d web

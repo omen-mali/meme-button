@@ -19,7 +19,11 @@ static uint8_t spriteCol = 0;
 static uint8_t spriteGlyph = 0;   // CGRAM slot currently shown
 static uint32_t nextFrameAt = 0;
 
-// ---- Protocol output (PLAN.md 3) ----
+static uint16_t lyricIndex = 0;   // next cue in MEMES[current].lyrics
+static uint8_t lyricLen = 0;      // chars of lyrics on LCD row 0
+static bool lyricFresh = true;    // row 0 still shows the title
+
+// ---- Protocol output ----
 
 static void sendWithId(const __FlashStringHelper* tag, const char* id) {
   Serial.print(tag);
@@ -48,7 +52,7 @@ static void printRow(uint8_t row, const char* text) {
 
 static void showIdle() {
   lcd.setCursor(0, 0);
-  lcd.print(F("  DO NOT PRESS  "));
+  lcd.print(F("PRESS FOR FREE FOOD  "));
   lcd.setCursor(0, 1);
   lcd.print(F("  (seriously)   "));
 }
@@ -71,6 +75,24 @@ static void startLcd(const Meme& meme, uint32_t now) {
   lcd.setCursor(spriteCol, 1);
   lcd.write(spriteGlyph);
   nextFrameAt = now + FRAME_MS;
+  lyricLen = 0;
+  lyricFresh = true;
+}
+
+// Builds the current lyric line on row 0, wrapping to a fresh row when a chunk doesn't fit.
+static void showLyric(uint8_t mode, const char* text) {
+  uint8_t len = strlen(text);
+  uint8_t sep = (mode == LYRIC_ADD && lyricLen) ? 1 : 0;
+  if (mode == LYRIC_NEW || lyricFresh || lyricLen + sep + len > LCD_COLS) {
+    printRow(0, text);
+    lyricLen = min(len, LCD_COLS);
+    lyricFresh = false;
+    return;
+  }
+  lcd.setCursor(lyricLen, 0);
+  if (sep) lcd.write(' ');
+  lcd.print(text);
+  lyricLen += sep + len;
 }
 
 // Sprite walks along row 1, cycling glyphs. Only the two changed cells are rewritten.
@@ -106,6 +128,7 @@ static void startMeme(uint8_t i, uint32_t now) {
   state = PLAYING;
   noteIndex = 0;
   nextNoteAt = now;
+  lyricIndex = 0;
 
   sendWithId(F("START"), MEMES[i].id);
   Serial.print(' ');
@@ -120,6 +143,29 @@ static void advanceMeme() {
   current = (current + 1) % MEME_COUNT;
   sendWithId(F("NEXT"), MEMES[current].id);
   Serial.println();
+}
+
+// Fires every cue attached to the note that just started.
+// LYRIC <id> <add|new|cont> <text>
+static void updateLyrics(const Meme& meme) {
+  static const char MODE_NAMES[][5] PROGMEM = { "add", "new", "cont" };
+  LyricCue cue;
+  while (lyricIndex < meme.lyricCount) {
+    memcpy_P(&cue, &meme.lyrics[lyricIndex], sizeof(cue));
+    if (cue.note != noteIndex) break;
+    lyricIndex++;
+
+    char text[LCD_COLS + 1];
+    strncpy_P(text, cue.text, LCD_COLS);
+    text[LCD_COLS] = '\0';
+    showLyric(cue.mode, text);
+
+    sendWithId(F("LYRIC"), meme.id);
+    Serial.print(' ');
+    Serial.print((const __FlashStringHelper*)MODE_NAMES[cue.mode]);
+    Serial.print(' ');
+    Serial.println((const __FlashStringHelper*)cue.text);
+  }
 }
 
 static void updatePlayer(uint32_t now) {
@@ -150,6 +196,8 @@ static void updatePlayer(uint32_t now) {
   Serial.print(' ');
   Serial.println(n.ms);
 
+  updateLyrics(meme);
+
   noteIndex++;
   nextNoteAt += n.ms;   // relative to previous target, not now, to avoid drift
 }
@@ -177,7 +225,7 @@ static void pollButton(uint32_t now) {
   }
 }
 
-// ---- Serial commands (PLAN.md 3, web to firmware) ----
+// ---- Serial commands (web to firmware) ----
 
 static int8_t findMeme(const char* id) {
   if (!id) return -1;

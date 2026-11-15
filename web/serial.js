@@ -1,4 +1,4 @@
-// Web Serial transport: newline-terminated ASCII lines at 115200 baud (PLAN.md 3).
+// Web Serial transport: newline-terminated ASCII lines at 115200 baud.
 // Only one program can hold the port: close Serial Monitor / `make monitor` first.
 
 const BAUD = 115200;

@@ -9,7 +9,7 @@ Source of truth for pin numbers: `firmware/meme_button/config.h`.
 | LCD RS / E | D7 / D8 | |
 | LCD D4–D7 | D9–D12 | |
 | LCD RW | GND | |
-| LCD V0 | 10 kΩ to 5V, 1 kΩ to GND | Tune per PLAN.md 2.2 |
+| LCD V0 | 10 kΩ to 5V, 1 kΩ to GND | |
 | LCD A / K | 5V via 220 Ω / GND | |
 
 Photo: _add breadboard photo here_
