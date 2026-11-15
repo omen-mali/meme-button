@@ -5,7 +5,7 @@ Stupid Ideas Hackathon Ottawa F26. Track: **Stupidest Button**.
 A physical button on an Arduino UNO. Press it and the buzzer plays a meme while the LCD runs a tiny animation. Hooked to a web page connected over USB (Web Serial) that reacts to the same press with a synced visual.
 
 ## Team
-- Momen Ali (Solo 😃)
+- Momen Ali (Solo 🤠)
 
 ## Layout
 | Path | What |
