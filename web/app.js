@@ -167,7 +167,9 @@ function checkRegistry(firmwareIds) {
 const handlers = {
   READY([version]) {
     markReady(`Connected · fw ${version ?? "?"}`);
-    setMode("single");   // firmware boots in single mode
+  },
+  MODE([mode]) {
+    setMode(mode);
   },
   MEMES([list = ""]) {
     checkRegistry(list.split(",").filter(Boolean));
@@ -262,7 +264,10 @@ function demoPress() {
   const id = Object.keys(MEMES)[0];
   clearTimeout(demoTimer);
   demoFeed("PRESS");
-  if (playing) demoFeed(`END ${playing.id}`);
+  if (playing) {
+    demoFeed(`END ${playing.id}`);   // like the firmware: a second press stops
+    return;
+  }
   demoFeed(`START ${id} ${DEMO_NOTES.length}`);
   demoFeed(`COUNT ${++demoCount}`);
   let i = 0;
@@ -304,9 +309,9 @@ ui.stop.addEventListener("click", stop);
 ui.closeVideo.addEventListener("click", closeVideo);
 for (const b of ui.modeButtons) {
   b.addEventListener("click", () => {
-    // No firmware confirmation for MODE in the protocol; UI reflects the request.
-    setMode(b.dataset.mode);
+    // Connected: the firmware's MODE reply updates the buttons
     if (serial.isOpen()) send(`MODE ${b.dataset.mode}`);
+    else setMode(b.dataset.mode);
   });
 }
 

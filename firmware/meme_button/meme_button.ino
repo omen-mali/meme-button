@@ -13,7 +13,7 @@ static uint8_t current = 0;       // index into MEMES
 static uint16_t noteIndex = 0;
 static uint32_t nextNoteAt = 0;
 static uint16_t playCount = 0;
-static bool cycleMode = false;    // MODE cycle: advance to the next meme after each END
+static bool cycleMode = true;     // MODE cycle: advance to the next meme after each END
 
 static uint8_t spriteCol = 0;
 static uint8_t spriteGlyph = 0;   // CGRAM slot currently shown
@@ -29,6 +29,10 @@ static void sendWithId(const __FlashStringHelper* tag, const char* id) {
   Serial.print(tag);
   Serial.print(' ');
   Serial.print(id);
+}
+
+static void sendMode() {
+  Serial.println(cycleMode ? F("MODE cycle") : F("MODE single"));
 }
 
 static void sendMemes() {
@@ -50,11 +54,52 @@ static void printRow(uint8_t row, const char* text) {
   for (; n < LCD_COLS; n++) lcd.write(' ');
 }
 
-static void showIdle() {
+// Idle row 0: IDLE_PREFIX + word scrolls left; after each full pass the next word swaps in.
+static const char IDLE_PREFIX[] = "PRESS FOR FREE ";
+static const char* const IDLE_WORDS[] = { "FOOD", "MONEY", "VBUCKS", "PIZZA", "CANDY", "WIFI" };
+constexpr uint8_t IDLE_WORD_COUNT = sizeof(IDLE_WORDS) / sizeof(IDLE_WORDS[0]);
+
+static char idleText[32];         // IDLE_PREFIX + current word
+static uint8_t idleWord = 0;
+static uint8_t idleOffset = 0;    // marquee position
+static uint8_t idleLoopLen = 0;   // text + IDLE_GAP
+static uint16_t idleStepMs = 0;
+static uint32_t nextIdleStepAt = 0;
+
+static void drawIdleRow() {
+  uint8_t textLen = idleLoopLen - IDLE_GAP;
   lcd.setCursor(0, 0);
-  lcd.print(F("PRESS FOR FREE FOOD  "));
+  for (uint8_t col = 0; col < LCD_COLS; col++) {
+    uint8_t i = (idleOffset + col) % idleLoopLen;
+    lcd.write(i < textLen ? idleText[i] : ' ');
+  }
+}
+
+static void setIdleWord(uint8_t word, uint32_t now) {
+  idleWord = word;
+  strlcpy(idleText, IDLE_PREFIX, sizeof(idleText));
+  strlcat(idleText, IDLE_WORDS[word], sizeof(idleText));
+  idleLoopLen = strlen(idleText) + IDLE_GAP;
+  idleStepMs = IDLE_WORD_MS / idleLoopLen;   // one pass takes ~IDLE_WORD_MS
+  idleOffset = 0;
+  nextIdleStepAt = now + idleStepMs;
+  drawIdleRow();
+}
+
+static void showIdle() {
+  setIdleWord(idleWord, millis());
   lcd.setCursor(0, 1);
   lcd.print(F("  (seriously)   "));
+}
+
+static void updateIdle(uint32_t now) {
+  if (state != IDLE || (int32_t)(now - nextIdleStepAt) < 0) return;
+  nextIdleStepAt += idleStepMs;
+  if (++idleOffset < idleLoopLen) {
+    drawIdleRow();
+  } else {
+    setIdleWord((idleWord + 1) % IDLE_WORD_COUNT, now);   // pass done: back to start, next word
+  }
 }
 
 static void loadFrameSet(uint8_t i) {
@@ -117,13 +162,21 @@ static void stopPlayback() {
   Serial.println();
 }
 
+static void advanceMeme() {
+  current = (current + 1) % MEME_COUNT;
+  sendWithId(F("NEXT"), MEMES[current].id);
+  Serial.println();
+}
+
+// Any end of playback (finished, button stop, STOP) moves on in cycle mode.
 static void endMeme() {
   stopPlayback();
+  if (cycleMode) advanceMeme();
   showIdle();
 }
 
 static void startMeme(uint8_t i, uint32_t now) {
-  if (state == PLAYING) stopPlayback();   // restart: skip the idle screen
+  if (state == PLAYING) stopPlayback();   // PLAY <id> mid-melody: switch, skip the idle screen
   current = i;
   state = PLAYING;
   noteIndex = 0;
@@ -137,12 +190,6 @@ static void startMeme(uint8_t i, uint32_t now) {
   Serial.println(++playCount);
 
   startLcd(MEMES[i], now);
-}
-
-static void advanceMeme() {
-  current = (current + 1) % MEME_COUNT;
-  sendWithId(F("NEXT"), MEMES[current].id);
-  Serial.println();
 }
 
 // Fires every cue attached to the note that just started.
@@ -174,7 +221,6 @@ static void updatePlayer(uint32_t now) {
   const Meme& meme = MEMES[current];
   if (noteIndex >= meme.noteCount) {
     endMeme();
-    if (cycleMode) advanceMeme();
     return;
   }
 
@@ -206,7 +252,8 @@ static void updatePlayer(uint32_t now) {
 
 static void onPress(uint32_t now) {
   Serial.println(F("PRESS"));
-  startMeme(current, now);   // pressing mid-melody restarts it
+  if (state == PLAYING) endMeme();   // second press stops and returns to idle
+  else startMeme(current, now);
 }
 
 static void pollButton(uint32_t now) {
@@ -258,8 +305,8 @@ static void handleLine(char* line, uint32_t now) {
       return;
     }
   } else if (!strcmp_P(line, PSTR("MODE")) && arg) {
-    if (!strcmp_P(arg, PSTR("single"))) { cycleMode = false; return; }
-    if (!strcmp_P(arg, PSTR("cycle")))  { cycleMode = true;  return; }
+    if (!strcmp_P(arg, PSTR("single"))) { cycleMode = false; sendMode(); return; }
+    if (!strcmp_P(arg, PSTR("cycle")))  { cycleMode = true;  sendMode(); return; }
   }
 
   // Unknown command or bad argument: log and ignore
@@ -301,6 +348,7 @@ void setup() {
   Serial.print(F("READY "));
   Serial.println(FW_VERSION);
   sendMemes();
+  sendMode();
 }
 
 void loop() {
@@ -309,4 +357,5 @@ void loop() {
   pollSerial(now);
   updatePlayer(now);
   updateLcd(now);
+  updateIdle(now);
 }
