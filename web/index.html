@@ -17,11 +17,18 @@
     </div>
   </header>
 
+  <p id="fullscreenHint" class="fullscreen-hint" hidden>
+    Enter fullscreen to get your reward!
+    <button id="fullscreenBtn" type="button">Go fullscreen</button>
+    <span class="hint-keys">or press ⌃⌘F (Mac) / F11 (Windows)</span>
+  </p>
+
   <p id="warning" class="warning" role="alert" hidden></p>
 
   <main>
     <section id="stage" class="stage" data-state="idle" data-visual="dance" aria-live="polite">
       <div class="idle-text" aria-hidden="true"><span id="idlePrefix"></span><span id="idleWord" class="idle-word"></span></div>
+      <div class="idle-sub">(DEFINITELY NOT A SCAM!)</div>
       <div id="memeTitle" class="meme-title"></div>
       <div id="dancer" class="dancer" aria-hidden="true">
         <span class="head"></span>
@@ -55,7 +62,8 @@
 
       <div class="row">
         <label><input id="soundToggle" type="checkbox" checked> Page sound</label>
-        <input id="volume" type="range" min="0" max="100" value="60" aria-label="Page volume">
+        <label for="volume">Volume</label>
+        <input id="volume" type="range" min="0" max="100" value="60">
       </div>
       <div class="row">
         <label><input id="videoToggle" type="checkbox"> Play video on press</label>
@@ -72,6 +80,14 @@
       <div id="log" class="log"></div>
     </details>
   </main>
+
+  <div id="rollOverlay" class="roll-overlay" hidden>
+    <div id="rollPlayer"></div>
+    <!-- Fallback when the YouTube player API can't load -->
+    <iframe id="rollFrame" title="Meme video" allow="autoplay; encrypted-media; fullscreen" allowfullscreen hidden></iframe>
+    <button id="unmuteBtn" class="roll-unmute" type="button" hidden>🔊 Tap or press any key for sound</button>
+    <button id="closeRollBtn" class="roll-close" type="button">Close (Esc)</button>
+  </div>
 
   <footer>Space = press. With no board connected, the page runs a demo.</footer>
 </body>

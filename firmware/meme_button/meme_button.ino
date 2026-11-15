@@ -13,6 +13,8 @@ static uint8_t current = 0;       // index into MEMES
 static uint16_t noteIndex = 0;
 static uint32_t nextNoteAt = 0;
 static uint16_t playCount = 0;
+static uint8_t lastPlayed = 0;    // meme the demo sequence rolls
+static uint32_t playStartedAt = 0;
 static bool cycleMode = true;     // MODE cycle: advance to the next meme after each END
 
 static uint8_t spriteCol = 0;
@@ -54,25 +56,42 @@ static void printRow(uint8_t row, const char* text) {
   for (; n < LCD_COLS; n++) lcd.write(' ');
 }
 
-// Idle row 0: IDLE_PREFIX + word. Scrolls left only until the end of the line is
-// visible, holds there, then the next word starts again from the left.
+// ---- Idle screens ----
+// Row 0 scrolls left only until the end of its text is visible, then holds.
+// IDLE: IDLE_PREFIX + word, next word every IDLE_WORD_MS.
+// TAUNT: after the second press; repeats until the third press.
+// ROLLED: after the third press; back to IDLE after ROLLED_MS.
+enum Screen : uint8_t { SCREEN_IDLE, SCREEN_TAUNT, SCREEN_ROLLED };
+
 static const char IDLE_PREFIX[] = "PRESS FOR FREE ";
 static const char* const IDLE_WORDS[] = { "FOOD", "MONEY", "VBUCKS", "PIZZA", "CANDY", "WIFI" };
 constexpr uint8_t IDLE_WORD_COUNT = sizeof(IDLE_WORDS) / sizeof(IDLE_WORDS[0]);
+static const char TAUNT_TOP[] = "Okay, for real this time.";
+static const char TAUNT_BOTTOM[] = "Press it again.";
 
-static char idleText[32];         // IDLE_PREFIX + current word
+static Screen screen = SCREEN_IDLE;
+static char rowText[32];          // row 0 text
+static uint8_t rowLen = 0;
+static uint8_t rowOffset = 0;     // first visible character
+static uint32_t screenAt = 0;     // when the current text started
+static uint32_t nextScrollAt = 0;
 static uint8_t idleWord = 0;
-static uint8_t idleLen = 0;
-static uint8_t idleOffset = 0;    // first visible character
-static uint32_t idleWordAt = 0;   // when the current word started
-static uint32_t nextIdleStepAt = 0;
 
-static void drawIdleRow() {
+static void drawScrollRow() {
   lcd.setCursor(0, 0);
   for (uint8_t col = 0; col < LCD_COLS; col++) {
-    uint8_t i = idleOffset + col;
-    lcd.write(i < idleLen ? idleText[i] : ' ');
+    uint8_t i = rowOffset + col;
+    lcd.write(i < rowLen ? rowText[i] : ' ');
   }
+}
+
+static void setScrollText(const char* text, uint32_t at) {
+  strlcpy(rowText, text, sizeof(rowText));
+  rowLen = strlen(rowText);
+  rowOffset = 0;
+  screenAt = at;
+  nextScrollAt = at + IDLE_START_MS;
+  drawScrollRow();
 }
 
 // IDLE <wordMs> <elapsedMs> <text>: the page shows the same word at the same time
@@ -80,41 +99,72 @@ static void sendIdle(uint32_t now) {
   Serial.print(F("IDLE "));
   Serial.print(IDLE_WORD_MS);
   Serial.print(' ');
-  Serial.print(now - idleWordAt);
+  Serial.print(now - screenAt);
   Serial.print(' ');
-  Serial.println(idleText);
+  Serial.println(rowText);
 }
 
 static void setIdleWord(uint8_t word, uint32_t at) {
+  char text[32];
   idleWord = word;
-  strlcpy(idleText, IDLE_PREFIX, sizeof(idleText));
-  strlcat(idleText, IDLE_WORDS[word], sizeof(idleText));
-  idleLen = strlen(idleText);
-  idleOffset = 0;
-  idleWordAt = at;
-  nextIdleStepAt = at + IDLE_START_MS;
-  drawIdleRow();
+  strlcpy(text, IDLE_PREFIX, sizeof(text));
+  strlcat(text, IDLE_WORDS[word], sizeof(text));
+  setScrollText(text, at);
   sendIdle(at);
 }
 
 static void showIdle() {
+  screen = SCREEN_IDLE;
   setIdleWord(idleWord, millis());
-  lcd.setCursor(0, 1);
-  lcd.print(F("  (seriously)   "));
+  printRow(1, " (not a scam!)");
+}
+
+// TAUNT <text>
+static void sendTaunt() {
+  Serial.print(F("TAUNT "));
+  Serial.print(TAUNT_TOP);
+  Serial.print(' ');
+  Serial.println(TAUNT_BOTTOM);
+}
+
+static void showTaunt() {
+  screen = SCREEN_TAUNT;
+  setScrollText(TAUNT_TOP, millis());
+  printRow(1, TAUNT_BOTTOM);
+  sendTaunt();
+}
+
+// ROLL <id>: the page opens that meme's video
+static void showRolled() {
+  screen = SCREEN_ROLLED;
+  setScrollText(MEMES[lastPlayed].lcdTitle, millis());
+  printRow(1, "");
+  sendWithId(F("ROLL"), MEMES[lastPlayed].id);
+  Serial.println();
 }
 
 static void updateIdle(uint32_t now) {
-  if (state != IDLE) return;
-  if (now - idleWordAt >= IDLE_WORD_MS) {
-    // next word, timed from the previous start so the period doesn't drift
-    setIdleWord((idleWord + 1) % IDLE_WORD_COUNT, idleWordAt + IDLE_WORD_MS);
+  // Signed: a screen started later in this loop pass (millis() after `now`) is not due yet
+  int32_t elapsed = (int32_t)(now - screenAt);
+  if (state != IDLE || elapsed < 0) return;
+  if (screen == SCREEN_IDLE && elapsed >= IDLE_WORD_MS) {
+    // timed from the previous start so the period doesn't drift
+    setIdleWord((idleWord + 1) % IDLE_WORD_COUNT, screenAt + IDLE_WORD_MS);
     return;
   }
-  uint8_t lastOffset = idleLen > LCD_COLS ? idleLen - LCD_COLS : 0;
-  if (idleOffset < lastOffset && (int32_t)(now - nextIdleStepAt) >= 0) {
-    idleOffset++;
-    nextIdleStepAt += IDLE_STEP_MS;
-    drawIdleRow();
+  if (screen == SCREEN_TAUNT && elapsed >= TAUNT_MS) {
+    setScrollText(TAUNT_TOP, screenAt + TAUNT_MS);   // scroll it again
+    return;
+  }
+  if (screen == SCREEN_ROLLED && elapsed >= ROLLED_MS) {
+    showIdle();
+    return;
+  }
+  uint8_t lastOffset = rowLen > LCD_COLS ? rowLen - LCD_COLS : 0;
+  if (rowOffset < lastOffset && (int32_t)(now - nextScrollAt) >= 0) {
+    rowOffset++;
+    nextScrollAt += IDLE_STEP_MS;
+    drawScrollRow();
   }
 }
 
@@ -194,6 +244,8 @@ static void endMeme() {
 static void startMeme(uint8_t i, uint32_t now) {
   if (state == PLAYING) stopPlayback();   // PLAY <id> mid-melody: switch, skip the idle screen
   current = i;
+  lastPlayed = i;
+  playStartedAt = now;
   state = PLAYING;
   noteIndex = 0;
   nextNoteAt = now;
@@ -266,10 +318,36 @@ static void updatePlayer(uint32_t now) {
 
 // ---- Button ----
 
+// Demo sequence, repeating: 1st press plays the melody, 2nd stops it and taunts,
+// 3rd rolls (the page opens the video).
+static uint8_t pressStep = 0;
+
+static void advanceSequence(uint32_t now) {
+  if (pressStep == 0) {
+    startMeme(current, now);
+  } else if (pressStep == 1) {
+    if (state == PLAYING) {   // a melody that ends on its own has already advanced
+      stopPlayback();
+      if (cycleMode) advanceMeme();
+    }
+    showTaunt();
+  } else {
+    if (state == PLAYING) stopPlayback();   // only via PLAY from the page
+    showRolled();
+  }
+  pressStep = (pressStep + 1) % 3;
+}
+
 static void onPress(uint32_t now) {
   Serial.println(F("PRESS"));
-  if (state == PLAYING) endMeme();   // second press stops and returns to idle
-  else startMeme(current, now);
+  advanceSequence(now);
+}
+
+// No second press within AUTO_TAUNT_MS: stop into the taunt as if pressed
+static void updateAutoTaunt(uint32_t now) {
+  if (state == PLAYING && pressStep == 1 && (int32_t)(now - playStartedAt) >= (int32_t)AUTO_TAUNT_MS) {
+    advanceSequence(now);
+  }
 }
 
 static void pollButton(uint32_t now) {
@@ -305,7 +383,8 @@ static void handleLine(char* line, uint32_t now) {
   if (!strcmp_P(line, PSTR("LIST"))) {
     sendMemes();
     sendMode();
-    if (state == IDLE) sendIdle(now);   // page joining mid-pass
+    if (state == IDLE && screen == SCREEN_IDLE) sendIdle(now);   // page joining mid-pass
+    if (state == IDLE && screen == SCREEN_TAUNT) sendTaunt();
     return;
   }
   if (!strcmp_P(line, PSTR("PRESS"))) {
@@ -376,4 +455,5 @@ void loop() {
   updatePlayer(now);
   updateLcd(now);
   updateIdle(now);
+  updateAutoTaunt(now);
 }

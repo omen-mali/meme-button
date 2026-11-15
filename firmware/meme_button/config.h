@@ -12,7 +12,7 @@ constexpr uint8_t PIN_LCD_D6 = 11;
 constexpr uint8_t PIN_LCD_D7 = 12;
 
 constexpr uint32_t BAUD = 115200;
-constexpr const char* FW_VERSION = "0.8";
+constexpr const char* FW_VERSION = "0.9-demo";
 constexpr uint8_t SERIAL_LINE_MAX = 32;  // longer incoming lines are dropped
 
 constexpr uint16_t DEBOUNCE_MS  = 30;
@@ -23,6 +23,9 @@ constexpr uint8_t  LCD_ROWS     = 2;
 constexpr uint16_t IDLE_WORD_MS  = 3000; // total time per word
 constexpr uint16_t IDLE_START_MS = 500;  // hold before scrolling
 constexpr uint16_t IDLE_STEP_MS  = 200;  // per one-character scroll step
+constexpr uint16_t TAUNT_MS      = 4000; // taunt scroll repeats this often
+constexpr uint16_t ROLLED_MS     = 6000; // meme title after the roll, then idle
+constexpr uint16_t AUTO_TAUNT_MS = 20000; // 1st press: melody stops into the taunt after this
 constexpr uint8_t  OCTAVE_SHIFT = 0;    // 1 = x2, 2 = x4; louder near buzzer resonance
 
 // 0 = Option A (analog volume, no code). 1 = Option B (toneAC + pot on A0).
