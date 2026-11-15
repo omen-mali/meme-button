@@ -1,4 +1,4 @@
-import { MEMES, IDLE_PREFIX, IDLE_WORDS, IDLE_PASS_MS, IDLE_GAP } from "./memes.js";
+import { MEMES, IDLE_PREFIX, IDLE_WORDS, IDLE_WORD_MS } from "./memes.js";
 import * as serial from "./serial.js";
 
 const $ = (id) => document.getElementById(id);
@@ -16,7 +16,8 @@ const ui = {
   count: $("count"),
   press: $("pressBtn"),
   pointer: $("pointer"),
-  marqueeTrack: $("marqueeTrack"),
+  idlePrefix: $("idlePrefix"),
+  idleWord: $("idleWord"),
   stop: $("stopBtn"),
   modeButtons: document.querySelectorAll("[data-mode]"),
   sound: $("soundToggle"),
@@ -32,7 +33,8 @@ const LOG_MAX = 200;
 const READY_TIMEOUT_MS = 3000;   // board normally resets and sends READY within ~2 s
 
 let boardReady = false;
-let playing = null;               // { id, noteCount } while a melody runs
+let playing = null;               // { id, noteCount, last } while a melody runs
+let finishedId = null;            // set when the last melody played to the end, not stopped
 let readyTimer = null;
 
 // ---- Log ----
@@ -85,7 +87,7 @@ function memeInfo(id) {
 
 function startVisual(id, noteCount) {
   const meme = memeInfo(id);
-  playing = { id, noteCount };
+  playing = { id, noteCount, last: -1 };
   ui.stage.dataset.state = "playing";
   ui.stage.dataset.visual = meme.visual;
   ui.title.textContent = meme.title;
@@ -112,13 +114,16 @@ function showLyric(mode, text) {
 
 function stepVisual(index) {
   if (!playing) return;
+  playing.last = index;
   ui.dancer.classList.toggle("pose-b", index % 2 === 1);
   ui.progress.style.width = `${Math.min(100, ((index + 1) / playing.noteCount) * 100)}%`;
   ui.stage.animate([{ transform: "scale(1.02)" }, { transform: "scale(1)" }], { duration: 160 });
 }
 
 function endVisual() {
+  finishedId = playing && playing.last >= playing.noteCount - 1 ? playing.id : null;
   playing = null;
+  ui.upNext.textContent = "";
   ui.stage.dataset.state = "idle";
   ui.title.textContent = "";
   ui.dancer.classList.remove("pose-b");
@@ -130,32 +135,31 @@ function flashPress() {
   (ui.press.hidden ? ui.pointer : ui.press).animate([{ filter: "brightness(1.6)" }, { filter: "none" }], { duration: 250 });
 }
 
-// ---- Idle marquee: one pass per word, stepped one character at a time like the LCD ----
+// ---- Idle text: static line, last word swaps in place ----
 
-let marqueeAnim = null;
 let localIdleTimer = null;
 let localWord = 0;
+let wordSlot = Math.max(...IDLE_WORDS.map((w) => w.length));
 
-function renderMarquee(text, passMs, elapsedMs = 0) {
-  const copy = text + " ".repeat(IDLE_GAP);
-  ui.marqueeTrack.textContent = copy + copy;   // two copies: -50% lands on the second
-  marqueeAnim?.cancel();
-  marqueeAnim = ui.marqueeTrack.animate(
-    [{ transform: "translateX(0)" }, { transform: "translateX(-50%)" }],
-    { duration: passMs, easing: `steps(${copy.length}, end)`, fill: "forwards" },
-  );
-  marqueeAnim.currentTime = Math.min(elapsedMs, passMs);
+function renderIdle(text) {
+  const cut = text.lastIndexOf(" ") + 1;
+  const word = text.slice(cut);
+  // Reserve the longest word's width so the line never shifts when the word changes
+  wordSlot = Math.max(wordSlot, word.length);
+  ui.idleWord.style.minWidth = `calc(${wordSlot}ch + ${wordSlot * 0.05}em)`;   // + letter-spacing
+  ui.idlePrefix.textContent = text.slice(0, cut);
+  ui.idleWord.textContent = word;
 }
 
 // No board: rotate through the page's own copy of the words.
 function startLocalIdle() {
   stopLocalIdle();
-  const pass = () => {
-    renderMarquee(IDLE_PREFIX + IDLE_WORDS[localWord], IDLE_PASS_MS);
+  const next = () => {
+    renderIdle(IDLE_PREFIX + IDLE_WORDS[localWord]);
     localWord = (localWord + 1) % IDLE_WORDS.length;
-    localIdleTimer = setTimeout(pass, IDLE_PASS_MS);
+    localIdleTimer = setTimeout(next, IDLE_WORD_MS);
   };
-  pass();
+  next();
 }
 
 function stopLocalIdle() {
@@ -210,9 +214,9 @@ const handlers = {
   MODE([mode]) {
     setMode(mode);
   },
-  IDLE([passMs, elapsedMs, ...words]) {
+  IDLE([, , ...words]) {   // IDLE <wordMs> <elapsedMs> <text>
     stopLocalIdle();
-    renderMarquee(words.join(" "), Number(passMs) || IDLE_PASS_MS, Number(elapsedMs) || 0);
+    renderIdle(words.join(" "));
   },
   MEMES([list = ""]) {
     checkRegistry(list.split(",").filter(Boolean));
@@ -232,7 +236,8 @@ const handlers = {
   },
   END: endVisual,
   NEXT([id]) {
-    ui.upNext.textContent = `Up next: ${memeInfo(id).title}`;
+    // Only after a melody finished on its own, and only if it's a different meme
+    if (finishedId && id !== finishedId) ui.upNext.textContent = `Up next: ${memeInfo(id).title}`;
   },
   COUNT([n]) {
     ui.count.textContent = n;

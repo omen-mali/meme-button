@@ -12,15 +12,17 @@ constexpr uint8_t PIN_LCD_D6 = 11;
 constexpr uint8_t PIN_LCD_D7 = 12;
 
 constexpr uint32_t BAUD = 115200;
-constexpr const char* FW_VERSION = "0.7";
+constexpr const char* FW_VERSION = "0.8";
 constexpr uint8_t SERIAL_LINE_MAX = 32;  // longer incoming lines are dropped
 
 constexpr uint16_t DEBOUNCE_MS  = 30;
 constexpr uint16_t FRAME_MS     = 250;  // LCD sprite frame period
 constexpr uint8_t  LCD_COLS     = 16;
 constexpr uint8_t  LCD_ROWS     = 2;
-constexpr uint16_t IDLE_WORD_MS = 5000; // one full idle-marquee pass per word
-constexpr uint8_t  IDLE_GAP     = 4;    // blank cells between marquee repeats
+// Idle row 0 per word: hold the start, scroll until the end is visible, hold the end
+constexpr uint16_t IDLE_WORD_MS  = 3000; // total time per word
+constexpr uint16_t IDLE_START_MS = 500;  // hold before scrolling
+constexpr uint16_t IDLE_STEP_MS  = 200;  // per one-character scroll step
 constexpr uint8_t  OCTAVE_SHIFT = 0;    // 1 = x2, 2 = x4; louder near buzzer resonance
 
 // 0 = Option A (analog volume, no code). 1 = Option B (toneAC + pot on A0).

@@ -54,49 +54,47 @@ static void printRow(uint8_t row, const char* text) {
   for (; n < LCD_COLS; n++) lcd.write(' ');
 }
 
-// Idle row 0: IDLE_PREFIX + word scrolls left; after each full pass the next word swaps in.
+// Idle row 0: IDLE_PREFIX + word. Scrolls left only until the end of the line is
+// visible, holds there, then the next word starts again from the left.
 static const char IDLE_PREFIX[] = "PRESS FOR FREE ";
 static const char* const IDLE_WORDS[] = { "FOOD", "MONEY", "VBUCKS", "PIZZA", "CANDY", "WIFI" };
 constexpr uint8_t IDLE_WORD_COUNT = sizeof(IDLE_WORDS) / sizeof(IDLE_WORDS[0]);
 
 static char idleText[32];         // IDLE_PREFIX + current word
 static uint8_t idleWord = 0;
-static uint8_t idleOffset = 0;    // marquee position
-static uint8_t idleLoopLen = 0;   // text + IDLE_GAP
-static uint16_t idleStepMs = 0;
+static uint8_t idleLen = 0;
+static uint8_t idleOffset = 0;    // first visible character
+static uint32_t idleWordAt = 0;   // when the current word started
 static uint32_t nextIdleStepAt = 0;
 
 static void drawIdleRow() {
-  uint8_t textLen = idleLoopLen - IDLE_GAP;
   lcd.setCursor(0, 0);
   for (uint8_t col = 0; col < LCD_COLS; col++) {
-    uint8_t i = (idleOffset + col) % idleLoopLen;
-    lcd.write(i < textLen ? idleText[i] : ' ');
+    uint8_t i = idleOffset + col;
+    lcd.write(i < idleLen ? idleText[i] : ' ');
   }
 }
 
-// IDLE <passMs> <elapsedMs> <text>: lets the page run the same pass in step with the LCD
+// IDLE <wordMs> <elapsedMs> <text>: the page shows the same word at the same time
 static void sendIdle(uint32_t now) {
-  int32_t untilStep = (int32_t)(nextIdleStepAt - now);
-  uint32_t elapsed = (uint32_t)(idleOffset + 1) * idleStepMs - max(untilStep, (int32_t)0);
   Serial.print(F("IDLE "));
-  Serial.print((uint32_t)idleStepMs * idleLoopLen);
+  Serial.print(IDLE_WORD_MS);
   Serial.print(' ');
-  Serial.print(elapsed);
+  Serial.print(now - idleWordAt);
   Serial.print(' ');
   Serial.println(idleText);
 }
 
-static void setIdleWord(uint8_t word, uint32_t now) {
+static void setIdleWord(uint8_t word, uint32_t at) {
   idleWord = word;
   strlcpy(idleText, IDLE_PREFIX, sizeof(idleText));
   strlcat(idleText, IDLE_WORDS[word], sizeof(idleText));
-  idleLoopLen = strlen(idleText) + IDLE_GAP;
-  idleStepMs = IDLE_WORD_MS / idleLoopLen;   // one pass takes ~IDLE_WORD_MS
+  idleLen = strlen(idleText);
   idleOffset = 0;
-  nextIdleStepAt = now + idleStepMs;
+  idleWordAt = at;
+  nextIdleStepAt = at + IDLE_START_MS;
   drawIdleRow();
-  sendIdle(now);
+  sendIdle(at);
 }
 
 static void showIdle() {
@@ -106,12 +104,17 @@ static void showIdle() {
 }
 
 static void updateIdle(uint32_t now) {
-  if (state != IDLE || (int32_t)(now - nextIdleStepAt) < 0) return;
-  nextIdleStepAt += idleStepMs;
-  if (++idleOffset < idleLoopLen) {
+  if (state != IDLE) return;
+  if (now - idleWordAt >= IDLE_WORD_MS) {
+    // next word, timed from the previous start so the period doesn't drift
+    setIdleWord((idleWord + 1) % IDLE_WORD_COUNT, idleWordAt + IDLE_WORD_MS);
+    return;
+  }
+  uint8_t lastOffset = idleLen > LCD_COLS ? idleLen - LCD_COLS : 0;
+  if (idleOffset < lastOffset && (int32_t)(now - nextIdleStepAt) >= 0) {
+    idleOffset++;
+    nextIdleStepAt += IDLE_STEP_MS;
     drawIdleRow();
-  } else {
-    setIdleWord((idleWord + 1) % IDLE_WORD_COUNT, now);   // pass done: back to start, next word
   }
 }
 

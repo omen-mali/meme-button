@@ -102,11 +102,11 @@ main {
 }
 .meme-title { font-size: 1.25rem; text-align: center; letter-spacing: 0.05em; }
 
-/* Idle marquee: two copies of the text in a monospace track, stepped by app.js */
-.marquee { width: 100%; overflow: hidden; font-size: 1.25rem; letter-spacing: 0.05em; }
-.marquee-track { display: inline-block; white-space: pre; }
+/* Idle text: static line; app.js swaps the word inside a fixed-width slot */
+.idle-text { width: 100%; font-size: 1.25rem; letter-spacing: 0.05em; text-align: center; white-space: pre; }
+.idle-word { display: inline-block; text-align: left; font-weight: 700; }
 .stage[data-state="idle"] .meme-title,
-.stage[data-state="playing"] .marquee { display: none; }
+.stage[data-state="playing"] .idle-text { display: none; }
 
 .dancer { position: relative; width: 80px; height: 140px; flex: none; }
 .dancer span { position: absolute; background: currentColor; transition: transform 80ms; }
