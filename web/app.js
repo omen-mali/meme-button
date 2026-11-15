@@ -1,4 +1,6 @@
-import { MEMES, IDLE_PREFIX, IDLE_WORDS, IDLE_WORD_MS } from "./memes.js";
+import {
+  MEMES, IDLE_PREFIX, IDLE_WORDS, IDLE_WORD_MS, TAUNT_TEXT, ROLL_REDIRECT, ROLL_WATCHDOG_MS,
+} from "./memes.js";
 import * as serial from "./serial.js";
 
 const $ = (id) => document.getElementById(id);
@@ -27,6 +29,12 @@ const ui = {
   videoFrame: $("videoFrame"),
   closeVideo: $("closeVideoBtn"),
   log: $("log"),
+  rollOverlay: $("rollOverlay"),
+  rollFrame: $("rollFrame"),
+  closeRoll: $("closeRollBtn"),
+  unmute: $("unmuteBtn"),
+  fullscreenHint: $("fullscreenHint"),
+  fullscreenBtn: $("fullscreenBtn"),
 };
 
 const LOG_MAX = 200;
@@ -167,6 +175,126 @@ function stopLocalIdle() {
   localIdleTimer = null;
 }
 
+// ---- Demo sequence: taunt (2nd press) and roll (3rd press) ----
+
+function showTaunt(text) {
+  ui.stage.dataset.screen = "taunt";
+  ui.title.textContent = text;
+}
+
+function clearTaunt() {
+  delete ui.stage.dataset.screen;
+}
+
+// Roll video. Chrome only autoplays with sound when the page has had a user gesture
+// (Connect) and the window is visible, and a plain embed can't report a refusal.
+// The YouTube player API is created once up front, so a roll only has to press play,
+// and a blocked start falls back to muted playback plus a "tap for sound" button.
+
+let ytPlayer = null;   // YT.Player once the API is ready
+let rollWatchdog = null;
+
+function loadYouTubePlayer() {
+  window.onYouTubeIframeAPIReady = () => {
+    const player = new YT.Player("rollPlayer", {
+      host: "https://www.youtube-nocookie.com",
+      width: "100%",
+      height: "100%",
+      playerVars: { rel: 0, playsinline: 1 },
+      events: {
+        onReady: () => {
+          ytPlayer = player;
+          const first = MEMES[Object.keys(MEMES)[0]]?.youtubeId;
+          if (first) player.cueVideoById(first);   // warm up: the first roll starts faster
+        },
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.PLAYING) clearTimeout(rollWatchdog);
+        },
+        onAutoplayBlocked: () => {
+          console.info("autoplay with sound blocked; playing muted");
+          playMuted();
+        },
+      },
+    });
+  };
+  const script = document.createElement("script");
+  script.src = "https://www.youtube.com/iframe_api";
+  script.onerror = () => console.warn("YouTube player API unavailable; using a plain embed");
+  document.head.append(script);
+}
+
+function rollPlaying() {
+  const state = ytPlayer?.getPlayerState();
+  return state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING;
+}
+
+function playMuted() {
+  if (ui.rollOverlay.hidden || !ytPlayer) return;
+  ytPlayer.mute();
+  ytPlayer.playVideo();
+  ui.unmute.hidden = false;
+}
+
+// Needs a gesture: click, tap or key press
+function unmuteRoll() {
+  if (!ytPlayer) return;
+  ytPlayer.unMute();
+  ytPlayer.playVideo();
+  ui.unmute.hidden = true;
+}
+
+function openRoll(id) {
+  const yt = MEMES[id]?.youtubeId;
+  if (!yt) return;
+  if (ROLL_REDIRECT) {
+    location.assign(`https://www.youtube.com/watch?v=${yt}`);
+    return;
+  }
+  ui.rollOverlay.hidden = false;
+  ui.unmute.hidden = true;
+  if (ytPlayer) {
+    ytPlayer.unMute();
+    ytPlayer.loadVideoById(yt);
+    clearTimeout(rollWatchdog);
+    rollWatchdog = setTimeout(() => {
+      if (!rollPlaying()) {
+        console.info("video not playing after", ROLL_WATCHDOG_MS, "ms; playing muted");
+        playMuted();
+      }
+    }, ROLL_WATCHDOG_MS);
+  } else {
+    ui.rollFrame.src = `https://www.youtube-nocookie.com/embed/${yt}?autoplay=1&rel=0&playsinline=1`;
+    ui.rollFrame.hidden = false;
+  }
+  // Page already fullscreen: the overlay fills the screen as is. Otherwise this only
+  // works inside a user gesture (Space / on-screen press); a physical press arrives
+  // over serial, so the overlay just fills the window.
+  if (!document.fullscreenElement) ui.rollOverlay.requestFullscreen?.().catch(() => {});
+}
+
+function closeRoll() {
+  if (ui.rollOverlay.hidden) return;
+  clearTimeout(rollWatchdog);
+  ytPlayer?.stopVideo();
+  ui.rollFrame.src = "about:blank";
+  ui.rollFrame.hidden = true;
+  ui.unmute.hidden = true;
+  ui.rollOverlay.hidden = true;
+  if (document.fullscreenElement === ui.rollOverlay) document.exitFullscreen().catch(() => {});
+}
+
+// ---- Fullscreen hint: shown until the page or the browser is fullscreen ----
+
+function isFullscreen() {
+  if (document.fullscreenElement) return true;
+  // Browser fullscreen (⌃⌘F, F11) doesn't set fullscreenElement; the viewport fills the screen instead
+  return window.innerWidth >= screen.width - 2 && window.innerHeight >= screen.height - 2;
+}
+
+function updateFullscreenHint() {
+  ui.fullscreenHint.hidden = isFullscreen();
+}
+
 function showConnectedControls(connected) {
   ui.press.hidden = connected;     // the real button takes over
   ui.pointer.hidden = !connected;
@@ -216,6 +344,7 @@ const handlers = {
   },
   IDLE([, , ...words]) {   // IDLE <wordMs> <elapsedMs> <text>
     stopLocalIdle();
+    clearTaunt();
     renderIdle(words.join(" "));
   },
   MEMES([list = ""]) {
@@ -224,6 +353,8 @@ const handlers = {
   },
   PRESS: flashPress,
   START([id, n]) {
+    closeRoll();
+    clearTaunt();
     startVisual(id, Number(n) || 1);
     maybeStartVideo(id);
   },
@@ -235,6 +366,13 @@ const handlers = {
     showLyric(mode, words.join(" "));
   },
   END: endVisual,
+  TAUNT(words) {
+    showTaunt(words.join(" "));
+  },
+  ROLL([id]) {
+    clearTaunt();
+    openRoll(id);
+  },
   NEXT([id]) {
     // Only after a melody finished on its own, and only if it's a different meme
     if (finishedId && id !== finishedId) ui.upNext.textContent = `Up next: ${memeInfo(id).title}`;
@@ -308,6 +446,7 @@ async function onConnectClick() {
 const DEMO_NOTES = [[523, 150], [659, 150], [784, 150], [1047, 300], [0, 100], [784, 150], [1047, 450]];
 let demoTimer = null;
 let demoCount = 0;
+let demoStep = 0;   // mirrors the firmware's press sequence
 
 function demoFeed(line) {
   onLine(line, "demo");
@@ -317,8 +456,15 @@ function demoPress() {
   const id = Object.keys(MEMES)[0];
   clearTimeout(demoTimer);
   demoFeed("PRESS");
-  if (playing) {
-    demoFeed(`END ${playing.id}`);   // like the firmware: a second press stops
+  const seq = demoStep;
+  demoStep = (demoStep + 1) % 3;
+  if (seq === 1) {
+    if (playing) demoFeed(`END ${playing.id}`);
+    demoFeed(`TAUNT ${TAUNT_TEXT}`);
+    return;
+  }
+  if (seq === 2) {
+    demoFeed(`ROLL ${id}`);
     return;
   }
   demoFeed(`START ${id} ${DEMO_NOTES.length}`);
@@ -368,7 +514,29 @@ for (const b of ui.modeButtons) {
   });
 }
 
+ui.closeRoll.addEventListener("click", closeRoll);
+ui.fullscreenBtn.addEventListener("click", () => {
+  document.documentElement.requestFullscreen?.().catch((err) => console.warn("fullscreen refused:", err));
+});
+window.addEventListener("resize", updateFullscreenHint);
+document.addEventListener("fullscreenchange", updateFullscreenHint);
+
+ui.unmute.addEventListener("click", unmuteRoll);
+
+// Chrome holds back playback while the window is hidden or covered; retry when it shows
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !ui.rollOverlay.hidden && ytPlayer && !rollPlaying()) {
+    ytPlayer.playVideo();
+  }
+});
+
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeRoll();
+  if (!ui.unmute.hidden && e.key !== "Escape") {   // any key while muted: unmute, don't press
+    e.preventDefault();
+    unmuteRoll();
+    return;
+  }
   if (e.code !== "Space" || e.repeat || e.target.closest("input, button, select, textarea")) return;
   e.preventDefault();
   press();
@@ -380,3 +548,5 @@ if (!serial.isSupported()) {
 }
 endVisual();
 startLocalIdle();
+updateFullscreenHint();
+loadYouTubePlayer();
