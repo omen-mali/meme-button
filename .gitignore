@@ -1,0 +1,6 @@
+.DS_Store
+build/
+*.hex
+*.elf
+.vscode/
+COMMIT_MSG.txt
