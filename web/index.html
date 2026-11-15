@@ -21,7 +21,8 @@
 
   <main>
     <section id="stage" class="stage" data-state="idle" data-visual="dance" aria-live="polite">
-      <div id="memeTitle" class="meme-title">DO NOT PRESS</div>
+      <div id="idleMarquee" class="marquee" aria-hidden="true"><div id="marqueeTrack" class="marquee-track"></div></div>
+      <div id="memeTitle" class="meme-title"></div>
       <div id="dancer" class="dancer" aria-hidden="true">
         <span class="head"></span>
         <span class="torso"></span>
@@ -40,6 +41,10 @@
 
     <section class="controls">
       <button id="pressBtn" class="big-button" type="button">PRESS</button>
+      <div id="pointer" class="pointer" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v16M5 12l7 7 7-7"/></svg>
+        <span>Press the real button</span>
+      </div>
       <p class="counter">Times rolled: <strong id="count">0</strong></p>
 
       <div class="row" role="group" aria-label="Mode">

@@ -1,4 +1,4 @@
-import { MEMES } from "./memes.js";
+import { MEMES, IDLE_PREFIX, IDLE_WORDS, IDLE_PASS_MS, IDLE_GAP } from "./memes.js";
 import * as serial from "./serial.js";
 
 const $ = (id) => document.getElementById(id);
@@ -15,6 +15,8 @@ const ui = {
   lyricLine: $("lyricLine"),
   count: $("count"),
   press: $("pressBtn"),
+  pointer: $("pointer"),
+  marqueeTrack: $("marqueeTrack"),
   stop: $("stopBtn"),
   modeButtons: document.querySelectorAll("[data-mode]"),
   sound: $("soundToggle"),
@@ -26,7 +28,6 @@ const ui = {
   log: $("log"),
 };
 
-const IDLE_TITLE = "DO NOT PRESS";
 const LOG_MAX = 200;
 const READY_TIMEOUT_MS = 3000;   // board normally resets and sends READY within ~2 s
 
@@ -119,14 +120,52 @@ function stepVisual(index) {
 function endVisual() {
   playing = null;
   ui.stage.dataset.state = "idle";
-  ui.title.textContent = IDLE_TITLE;
+  ui.title.textContent = "";
   ui.dancer.classList.remove("pose-b");
   ui.progress.style.width = "0%";
   clearLyrics();
 }
 
 function flashPress() {
-  ui.press.animate([{ filter: "brightness(1.6)" }, { filter: "none" }], { duration: 250 });
+  (ui.press.hidden ? ui.pointer : ui.press).animate([{ filter: "brightness(1.6)" }, { filter: "none" }], { duration: 250 });
+}
+
+// ---- Idle marquee: one pass per word, stepped one character at a time like the LCD ----
+
+let marqueeAnim = null;
+let localIdleTimer = null;
+let localWord = 0;
+
+function renderMarquee(text, passMs, elapsedMs = 0) {
+  const copy = text + " ".repeat(IDLE_GAP);
+  ui.marqueeTrack.textContent = copy + copy;   // two copies: -50% lands on the second
+  marqueeAnim?.cancel();
+  marqueeAnim = ui.marqueeTrack.animate(
+    [{ transform: "translateX(0)" }, { transform: "translateX(-50%)" }],
+    { duration: passMs, easing: `steps(${copy.length}, end)`, fill: "forwards" },
+  );
+  marqueeAnim.currentTime = Math.min(elapsedMs, passMs);
+}
+
+// No board: rotate through the page's own copy of the words.
+function startLocalIdle() {
+  stopLocalIdle();
+  const pass = () => {
+    renderMarquee(IDLE_PREFIX + IDLE_WORDS[localWord], IDLE_PASS_MS);
+    localWord = (localWord + 1) % IDLE_WORDS.length;
+    localIdleTimer = setTimeout(pass, IDLE_PASS_MS);
+  };
+  pass();
+}
+
+function stopLocalIdle() {
+  clearTimeout(localIdleTimer);
+  localIdleTimer = null;
+}
+
+function showConnectedControls(connected) {
+  ui.press.hidden = connected;     // the real button takes over
+  ui.pointer.hidden = !connected;
 }
 
 function maybeStartVideo(id) {
@@ -171,6 +210,10 @@ const handlers = {
   MODE([mode]) {
     setMode(mode);
   },
+  IDLE([passMs, elapsedMs, ...words]) {
+    stopLocalIdle();
+    renderMarquee(words.join(" "), Number(passMs) || IDLE_PASS_MS, Number(elapsedMs) || 0);
+  },
   MEMES([list = ""]) {
     checkRegistry(list.split(",").filter(Boolean));
     if (!boardReady) markReady("Connected");
@@ -201,8 +244,10 @@ const handlers = {
 
 function onLine(line, source = "in") {
   log(source, line);
-  const [cmd, ...args] = line.split(" ");
-  if (Object.hasOwn(handlers, cmd)) handlers[cmd](args);
+  const [first, ...args] = line.split(" ");
+  // The UNO can emit a stray byte while resetting, e.g. "pREADY 0.7"
+  const cmd = Object.hasOwn(handlers, first) ? first : Object.keys(handlers).find((k) => first.endsWith(k));
+  if (cmd) handlers[cmd](args);
   else console.warn("unhandled line:", line);
 }
 
@@ -217,12 +262,15 @@ function markReady(text) {
   boardReady = true;
   clearTimeout(readyTimer);
   setStatus("connected", text);
+  showConnectedControls(true);
 }
 
 function onClose(lost) {
   boardReady = false;
   clearTimeout(readyTimer);
   endVisual();
+  showConnectedControls(false);
+  startLocalIdle();
   ui.connect.textContent = lost ? "Reconnect" : "Connect";
   if (lost) setStatus("lost", "Connection lost");
   else setStatus("idle", "Not connected");
@@ -326,3 +374,4 @@ if (!serial.isSupported()) {
   setStatus("lost", "Web Serial unavailable: use Chrome or Edge");
 }
 endVisual();
+startLocalIdle();

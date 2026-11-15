@@ -75,6 +75,18 @@ static void drawIdleRow() {
   }
 }
 
+// IDLE <passMs> <elapsedMs> <text>: lets the page run the same pass in step with the LCD
+static void sendIdle(uint32_t now) {
+  int32_t untilStep = (int32_t)(nextIdleStepAt - now);
+  uint32_t elapsed = (uint32_t)(idleOffset + 1) * idleStepMs - max(untilStep, (int32_t)0);
+  Serial.print(F("IDLE "));
+  Serial.print((uint32_t)idleStepMs * idleLoopLen);
+  Serial.print(' ');
+  Serial.print(elapsed);
+  Serial.print(' ');
+  Serial.println(idleText);
+}
+
 static void setIdleWord(uint8_t word, uint32_t now) {
   idleWord = word;
   strlcpy(idleText, IDLE_PREFIX, sizeof(idleText));
@@ -84,6 +96,7 @@ static void setIdleWord(uint8_t word, uint32_t now) {
   idleOffset = 0;
   nextIdleStepAt = now + idleStepMs;
   drawIdleRow();
+  sendIdle(now);
 }
 
 static void showIdle() {
@@ -288,6 +301,8 @@ static void handleLine(char* line, uint32_t now) {
 
   if (!strcmp_P(line, PSTR("LIST"))) {
     sendMemes();
+    sendMode();
+    if (state == IDLE) sendIdle(now);   // page joining mid-pass
     return;
   }
   if (!strcmp_P(line, PSTR("PRESS"))) {
@@ -343,12 +358,12 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
 
   lcd.begin(LCD_COLS, LCD_ROWS);
-  showIdle();
 
   Serial.print(F("READY "));
   Serial.println(FW_VERSION);
   sendMemes();
   sendMode();
+  showIdle();   // after READY so the first IDLE line reaches a listening page
 }
 
 void loop() {
