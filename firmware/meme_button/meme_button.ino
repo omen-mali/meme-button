@@ -13,6 +13,7 @@ static uint8_t current = 0;       // index into MEMES
 static uint16_t noteIndex = 0;
 static uint32_t nextNoteAt = 0;
 static uint16_t playCount = 0;
+static bool cycleMode = false;    // MODE cycle: advance to the next meme after each END
 
 static uint8_t spriteCol = 0;
 static uint8_t spriteGlyph = 0;   // CGRAM slot currently shown
@@ -24,6 +25,15 @@ static void sendWithId(const __FlashStringHelper* tag, const char* id) {
   Serial.print(tag);
   Serial.print(' ');
   Serial.print(id);
+}
+
+static void sendMemes() {
+  Serial.print(F("MEMES "));
+  for (uint8_t i = 0; i < MEME_COUNT; i++) {
+    if (i) Serial.print(',');
+    Serial.print(MEMES[i].id);
+  }
+  Serial.println();
 }
 
 // ---- LCD ----
@@ -106,12 +116,19 @@ static void startMeme(uint8_t i, uint32_t now) {
   startLcd(MEMES[i], now);
 }
 
+static void advanceMeme() {
+  current = (current + 1) % MEME_COUNT;
+  sendWithId(F("NEXT"), MEMES[current].id);
+  Serial.println();
+}
+
 static void updatePlayer(uint32_t now) {
   if (state != PLAYING || (int32_t)(now - nextNoteAt) < 0) return;
 
   const Meme& meme = MEMES[current];
   if (noteIndex >= meme.noteCount) {
     endMeme();
+    if (cycleMode) advanceMeme();
     return;
   }
 
@@ -155,6 +172,71 @@ static void pollButton(uint32_t now) {
   }
 }
 
+// ---- Serial commands (PLAN.md 3, web to firmware) ----
+
+static int8_t findMeme(const char* id) {
+  if (!id) return -1;
+  for (uint8_t i = 0; i < MEME_COUNT; i++) {
+    if (!strcmp(MEMES[i].id, id)) return i;
+  }
+  return -1;
+}
+
+static void handleLine(char* line, uint32_t now) {
+  char* arg = strchr(line, ' ');
+  if (arg) *arg++ = '\0';
+
+  if (!strcmp_P(line, PSTR("LIST"))) {
+    sendMemes();
+    return;
+  }
+  if (!strcmp_P(line, PSTR("PRESS"))) {
+    onPress(now);
+    return;
+  }
+  if (!strcmp_P(line, PSTR("STOP"))) {
+    if (state == PLAYING) endMeme();
+    return;
+  }
+  if (!strcmp_P(line, PSTR("PLAY"))) {
+    int8_t i = findMeme(arg);
+    if (i >= 0) {
+      startMeme(i, now);
+      return;
+    }
+  } else if (!strcmp_P(line, PSTR("MODE")) && arg) {
+    if (!strcmp_P(arg, PSTR("single"))) { cycleMode = false; return; }
+    if (!strcmp_P(arg, PSTR("cycle")))  { cycleMode = true;  return; }
+  }
+
+  // Unknown command or bad argument: log and ignore
+  if (arg) arg[-1] = ' ';
+  Serial.print(F("? "));
+  Serial.println(line);
+}
+
+static void pollSerial(uint32_t now) {
+  static char line[SERIAL_LINE_MAX + 1];
+  static uint8_t len = 0;
+  static bool overflow = false;
+
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\r') continue;
+    if (c == '\n') {
+      line[len] = '\0';
+      if (overflow) Serial.println(F("? (line too long)"));
+      else if (len) handleLine(line, now);
+      len = 0;
+      overflow = false;
+    } else if (len < SERIAL_LINE_MAX) {
+      line[len++] = c;
+    } else {
+      overflow = true;
+    }
+  }
+}
+
 void setup() {
   Serial.begin(BAUD);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -165,12 +247,13 @@ void setup() {
 
   Serial.print(F("READY "));
   Serial.println(FW_VERSION);
+  sendMemes();
 }
 
 void loop() {
   uint32_t now = millis();
   pollButton(now);
-  // H4: pollSerial();
+  pollSerial(now);
   updatePlayer(now);
   updateLcd(now);
 }
