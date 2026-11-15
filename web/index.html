@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meme Button</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Meme Button</h1>
+    <div class="connection">
+      <span id="status" class="status" data-kind="idle">Not connected</span>
+      <button id="connectBtn" type="button">Connect</button>
+    </div>
+  </header>
+
+  <p id="warning" class="warning" role="alert" hidden></p>
+
+  <main>
+    <section id="stage" class="stage" data-state="idle" data-visual="dance" aria-live="polite">
+      <div id="memeTitle" class="meme-title">DO NOT PRESS</div>
+      <div id="dancer" class="dancer" aria-hidden="true">
+        <span class="head"></span>
+        <span class="torso"></span>
+        <span class="arm left"></span>
+        <span class="arm right"></span>
+        <span class="leg left"></span>
+        <span class="leg right"></span>
+      </div>
+      <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+      <div id="upNext" class="up-next"></div>
+    </section>
+
+    <section class="controls">
+      <button id="pressBtn" class="big-button" type="button">PRESS</button>
+      <p class="counter">Times rolled: <strong id="count">0</strong></p>
+
+      <div class="row" role="group" aria-label="Mode">
+        <button type="button" data-mode="single" aria-pressed="true">Single</button>
+        <button type="button" data-mode="cycle" aria-pressed="false">Cycle</button>
+        <button id="stopBtn" type="button">Stop</button>
+      </div>
+
+      <div class="row">
+        <label><input id="soundToggle" type="checkbox" checked> Page sound</label>
+        <input id="volume" type="range" min="0" max="100" value="60" aria-label="Page volume">
+      </div>
+      <div class="row">
+        <label><input id="videoToggle" type="checkbox"> Play video on press</label>
+      </div>
+    </section>
+
+    <section id="videoWrap" class="video" hidden>
+      <iframe id="videoFrame" title="Meme video" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+      <button id="closeVideoBtn" type="button">Close video</button>
+    </section>
+
+    <details class="log-panel" open>
+      <summary>Serial log</summary>
+      <div id="log" class="log"></div>
+    </details>
+  </main>
+
+  <footer>Space = press. With no board connected, the page runs a demo.</footer>
+</body>
+</html>

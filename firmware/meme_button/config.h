@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-// Pin map: see PLAN.md 2.1 and docs/wiring.md
+// Pin map: see docs/wiring.md
 constexpr uint8_t PIN_BUTTON = 2;   // INPUT_PULLUP, pressed = LOW
 constexpr uint8_t PIN_BUZZER = 5;   // via PN2222 driver
 constexpr uint8_t PIN_LCD_RS = 7;
@@ -12,7 +12,7 @@ constexpr uint8_t PIN_LCD_D6 = 11;
 constexpr uint8_t PIN_LCD_D7 = 12;
 
 constexpr uint32_t BAUD = 115200;
-constexpr const char* FW_VERSION = "0.3";
+constexpr const char* FW_VERSION = "0.4";
 constexpr uint8_t SERIAL_LINE_MAX = 32;  // longer incoming lines are dropped
 
 constexpr uint16_t DEBOUNCE_MS  = 30;

@@ -134,16 +134,21 @@ static void updatePlayer(uint32_t now) {
 
   Note n;
   memcpy_P(&n, &meme.melody[noteIndex], sizeof(Note));
-  if (n.freq) {
-    // 32-bit math: int is 16-bit on AVR
-    tone(PIN_BUZZER, (uint32_t)n.freq << OCTAVE_SHIFT, (uint32_t)n.ms * 9 / 10);
+  uint32_t freq = (uint32_t)n.freq << OCTAVE_SHIFT;   // 32-bit math: int is 16-bit on AVR
+  if (freq) {
+    tone(PIN_BUZZER, freq, (uint32_t)n.ms * 9 / 10);
   } else {
     noTone(PIN_BUZZER);
   }
 
+  // NOTE <id> <index> <freq> <ms>: freq/ms let the page mirror the buzzer
   sendWithId(F("NOTE"), meme.id);
   Serial.print(' ');
-  Serial.println(noteIndex);
+  Serial.print(noteIndex);
+  Serial.print(' ');
+  Serial.print(freq);
+  Serial.print(' ');
+  Serial.println(n.ms);
 
   noteIndex++;
   nextNoteAt += n.ms;   // relative to previous target, not now, to avoid drift
